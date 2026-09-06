@@ -12,6 +12,7 @@ use crate::{
     actions::{
         request_delayed_market_data_type, request_spx_options_chain, request_spx_spot_price,
     },
+    boxspread::BoxSpread,
     data::parse_ib_bytes,
     read_message_from_ibkr, send_message_to_ibkr, start_connection,
 };
@@ -104,15 +105,43 @@ pub async fn get_available_dates(State(app_state): State<Arc<AppState>>) -> impl
     )
 }
 
-
 #[derive(Serialize, Deserialize)]
 pub struct BoxBody {
     pub loan_amount: u32,
     pub date: chrono::NaiveDate,
     pub exchange: String,
-    pub trading_class: String
+    pub trading_class: String,
 }
 
-pub async fn get_boxes(State(app_state): State<Arc<AppState>>, Json(body): Json<BoxBody>) -> impl IntoResponse {
+pub async fn get_boxes(
+    State(app_state): State<Arc<AppState>>,
+    Json(body): Json<BoxBody>,
+) -> impl IntoResponse {
+    let mut spread = BoxSpread::default()
+        .with_loan(body.loan_amount)
+        .with_date(body.date);
 
+    let (spot_price, chain) = {
+        let data = app_state.data.read();
+        let Some(spot_price) = data.spx_spot_price else {
+            return StatusCode::INTERNAL_SERVER_ERROR;
+        };
+
+        let Some(chain) = data
+            .spx_options_chains
+            .get(&(body.exchange, body.trading_class))
+        else {
+            return StatusCode::INTERNAL_SERVER_ERROR;
+        };
+
+        (spot_price, chain.clone())
+    };
+
+    let [low_strike, high_strike] = spread.candidate_legs(spot_price, &chain.strikes);
+
+    if low_strike == 0 || high_strike == 0 {
+        return StatusCode::INTERNAL_SERVER_ERROR;
+    }
+
+    StatusCode::OK
 }
