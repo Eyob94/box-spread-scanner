@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpStream, tcp::OwnedWriteHalf},
@@ -14,10 +16,36 @@ mod server;
 pub use config::*;
 pub use server::*;
 
+#[derive(Debug, Default, Clone)]
+pub struct OptionChainParams {
+    pub underlying_con_id: u32,
+    pub multiplier: u32,
+    pub expirations: Vec<chrono::NaiveDate>,
+    pub strikes: Vec<u32>,
+    pub quotes: HashMap<(u32, OptionSide), OptionQuote>,
+}
+
+#[derive(Debug, Clone, Eq, Hash, PartialEq, Default)]
+pub enum OptionSide {
+    #[default]
+    Call,
+    Put,
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct OptionQuote {
+    pub bid: Option<u32>,
+    pub ask: Option<u32>,
+    pub bid_size: u64,
+    pub ask_size: u64,
+    pub delta: Option<f64>,
+}
+
 #[derive(Default)]
 pub struct IBData {
     pub handshake: Option<bool>,
     pub start_api: Option<bool>,
+    pub spx_options_chains: HashMap<(String, String), OptionChainParams>,
 }
 
 pub async fn start_connection(
