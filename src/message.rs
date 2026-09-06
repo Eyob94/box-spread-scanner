@@ -1,0 +1,49 @@
+#[derive(Debug, Clone, Default)]
+pub struct IBMessage {}
+
+fn push_field(buf: &mut Vec<u8>, value: impl ToString) {
+    buf.extend_from_slice(value.to_string().as_bytes());
+    buf.push(0);
+}
+
+pub fn parse_message(byte_msg: &[u8]) -> eyre::Result<Vec<&str>> {
+    byte_msg
+        .split(|b| *b == 0)
+        .filter(|x| !x.is_empty())
+        .map(|a| std::str::from_utf8(a).map_err(Into::into))
+        .collect::<eyre::Result<Vec<_>>>()
+}
+
+impl IBMessage {
+    pub fn start_api_bytes(client_id: u16) -> Vec<u8> {
+        let mut payload = vec![];
+        push_field(&mut payload, IBKRMessageID::StartApi.into_wire_id());
+        push_field(&mut payload, 2);
+        push_field(&mut payload, client_id);
+        push_field(&mut payload, "");
+        payload
+    }
+
+    pub fn handshake() -> Vec<u8> {
+        let version_range = b"v100..176";
+        let mut msg = Vec::with_capacity(4 + 4 + version_range.len());
+        msg.extend_from_slice(b"API\0");
+        msg.extend_from_slice(&(version_range.len() as i32).to_be_bytes());
+        msg.extend_from_slice(version_range);
+        msg
+    }
+}
+
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash)]
+pub enum IBKRMessageID {
+    #[default]
+    StartApi,
+}
+
+impl IBKRMessageID {
+    pub fn into_wire_id(self) -> u32 {
+        match self {
+            Self::StartApi => 71,
+        }
+    }
+}
