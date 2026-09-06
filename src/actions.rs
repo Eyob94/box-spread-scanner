@@ -1,8 +1,12 @@
-use std::sync::{LazyLock, Mutex};
+use std::{
+    sync::{LazyLock, Mutex},
+};
 
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::message::{Contract, IBKRMessageID, IBMessage};
+use crate::{
+    message::{Contract, IBKRMessageID, IBMessage},
+};
 
 static REQ_ID: LazyLock<Mutex<u32>> = LazyLock::new(|| Mutex::new(0));
 
@@ -44,5 +48,20 @@ pub fn request_delayed_market_data_type(tx: &UnboundedSender<Vec<u8>>) -> eyre::
 
     tx.send(msg.into_bytes())?;
 
+    Ok(())
+}
+
+pub fn request_spx_options_chain(tx: &UnboundedSender<Vec<u8>>) -> eyre::Result<()> {
+    let mut req_id = REQ_ID.lock().unwrap();
+    let msg = IBMessage::default()
+        .with_id(IBKRMessageID::ReqSecDefOptParams)
+        .field(req_id.to_string())
+        .field("SPX")
+        .field("")
+        .field("IND")
+        .field(416904.to_string());
+    *req_id += 1;
+    drop(req_id);
+    tx.send(msg.into_bytes())?;
     Ok(())
 }

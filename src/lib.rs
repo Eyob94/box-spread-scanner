@@ -1,19 +1,16 @@
 use std::collections::HashMap;
 
+use serde::Serialize;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{
         TcpStream,
         tcp::{OwnedReadHalf, OwnedWriteHalf},
     },
-    sync::mpsc::{UnboundedReceiver, UnboundedSender},
 };
 use tracing::{debug, info, instrument};
 
-use crate::{
-    data::parse_ib_bytes,
-    message::{IBMessage, parse_message},
-};
+use crate::message::{IBMessage, OptionSide, parse_message};
 
 mod actions;
 mod config;
@@ -24,7 +21,7 @@ mod server;
 pub use config::*;
 pub use server::*;
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Serialize)]
 pub struct OptionChainParams {
     pub underlying_con_id: u32,
     pub multiplier: u32,
@@ -33,14 +30,7 @@ pub struct OptionChainParams {
     pub quotes: HashMap<(u32, OptionSide), OptionQuote>,
 }
 
-#[derive(Debug, Clone, Eq, Hash, PartialEq, Default)]
-pub enum OptionSide {
-    #[default]
-    Call,
-    Put,
-}
-
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Serialize)]
 pub struct OptionQuote {
     pub bid: Option<u32>,
     pub ask: Option<u32>,
@@ -49,7 +39,7 @@ pub struct OptionQuote {
     pub delta: Option<f64>,
 }
 
-#[derive(Default)]
+#[derive(Default, Serialize)]
 pub struct IBData {
     pub handshake: Option<bool>,
     pub start_api: Option<bool>,

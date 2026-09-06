@@ -1,13 +1,16 @@
-use std::{sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
-use axum::{Router, extract::State, http::StatusCode, response::IntoResponse, routing::get};
+use axum::{Json, Router, extract::State, http::StatusCode, response::IntoResponse, routing::get};
+use chrono::Utc;
 use parking_lot::RwLock;
 use tokio::{net::TcpListener, sync::mpsc::unbounded_channel};
-use tracing::instrument;
+use tracing::{info, instrument};
 
 use crate::{
     Config, IBData,
-    actions::{request_delayed_market_data_type, request_spx_spot_price},
+    actions::{
+        request_delayed_market_data_type, request_spx_options_chain, request_spx_spot_price,
+    },
     data::parse_ib_bytes,
     read_message_from_ibkr, send_message_to_ibkr, start_connection,
 };
@@ -26,8 +29,6 @@ pub async fn start_server(config: Config) -> eyre::Result<()> {
 
     let app_state = AppState { data: data.clone() };
 
-    //
-
     tokio::spawn(async move {
         loop {
             let payload = read_message_from_ibkr(&mut reader).await.unwrap();
@@ -45,6 +46,7 @@ pub async fn start_server(config: Config) -> eyre::Result<()> {
 
     tokio::spawn(async move {
         request_delayed_market_data_type(&request_tx).unwrap();
+        request_spx_options_chain(&request_tx).unwrap();
         // check spx price every 5 seconds in case it updates
         loop {
             request_spx_spot_price(&request_tx).unwrap();
@@ -55,6 +57,7 @@ pub async fn start_server(config: Config) -> eyre::Result<()> {
     let router = Router::new()
         .route("/health", get(|| async { StatusCode::OK }))
         .route("/dates", get(get_available_dates))
+        .route("/chains", get(get_spx_chain))
         .with_state(Arc::new(app_state));
 
     let listener = TcpListener::bind(format!("0.0.0.0:{}", config.server_port)).await?;
@@ -63,8 +66,39 @@ pub async fn start_server(config: Config) -> eyre::Result<()> {
     Ok(())
 }
 
-pub async fn get_available_dates(State(app_state): State<Arc<AppState>>) -> impl IntoResponse {
-    let data = &app_state.data;
+pub async fn get_spx_chain(State(app_state): State<Arc<AppState>>) -> impl IntoResponse {
+    let data = &app_state.data.read();
 
-    data.read().spx_spot_price.unwrap().to_string()
+    info!(?data.spx_options_chains, "Chain");
+
+    Json(
+        data.spx_options_chains
+            .iter()
+            .map(|(k, v)| (format!("{},{}", k.0, k.1), v.clone()))
+            .collect::<HashMap<String, _>>()
+            .clone(),
+    )
+}
+
+pub async fn get_available_dates(State(app_state): State<Arc<AppState>>) -> impl IntoResponse {
+    let data = &app_state.data.read();
+
+    let now = Utc::now().date_naive();
+
+    Json(
+        data.spx_options_chains
+            .iter()
+            .map(|(k, v)| {
+                (
+                    format!("{},{}", k.0, k.1),
+                    v.expirations
+                        .clone()
+                        .into_iter()
+                        .map(|ex| (ex, (ex - now).num_days()))
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect::<HashMap<String, _>>()
+            .clone(),
+    )
 }

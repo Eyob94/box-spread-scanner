@@ -1,3 +1,4 @@
+use serde::Serialize;
 use strum_macros::Display;
 
 #[derive(Debug, Clone, Default)]
@@ -23,7 +24,7 @@ pub struct Contract {
     pub trading_class: Option<String>,
 }
 
-#[derive(Debug, Clone, Display, Eq, Hash, PartialEq, Default)]
+#[derive(Debug, Clone, Display, Eq, Hash, PartialEq, Default, Serialize)]
 pub enum OptionSide {
     #[default]
     #[strum(serialize = "C")]
@@ -127,6 +128,7 @@ pub enum IBKRMessageID {
     ReqMktData,
 
     ReqMarketDataType,
+    ReqSecDefOptParams,
 }
 
 impl IBKRMessageID {
@@ -134,7 +136,9 @@ impl IBKRMessageID {
         match self {
             Self::StartApi => 71,
             Self::ReqMktData => 1,
-            Self::ReqMarketDataType => 59
+            Self::ReqMarketDataType => 59,
+
+            Self::ReqSecDefOptParams => 78,
         }
     }
 }
