@@ -17,6 +17,7 @@ mod config;
 mod data;
 mod message;
 mod server;
+mod boxspread;
 
 pub use config::*;
 pub use server::*;

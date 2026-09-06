@@ -3,6 +3,7 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 use axum::{Json, Router, extract::State, http::StatusCode, response::IntoResponse, routing::get};
 use chrono::Utc;
 use parking_lot::RwLock;
+use serde::{Deserialize, Serialize};
 use tokio::{net::TcpListener, sync::mpsc::unbounded_channel};
 use tracing::{info, instrument};
 
@@ -101,4 +102,17 @@ pub async fn get_available_dates(State(app_state): State<Arc<AppState>>) -> impl
             .collect::<HashMap<String, _>>()
             .clone(),
     )
+}
+
+
+#[derive(Serialize, Deserialize)]
+pub struct BoxBody {
+    pub loan_amount: u32,
+    pub date: chrono::NaiveDate,
+    pub exchange: String,
+    pub trading_class: String
+}
+
+pub async fn get_boxes(State(app_state): State<Arc<AppState>>, Json(body): Json<BoxBody>) -> impl IntoResponse {
+
 }

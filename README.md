@@ -104,7 +104,7 @@ _Response_
 curl http://localhost:4045/dates
 ```
 
-*Response*
+_Response_
 
 ```json
 
