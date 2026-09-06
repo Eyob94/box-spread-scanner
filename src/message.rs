@@ -126,7 +126,7 @@ pub enum IBKRMessageID {
     #[default]
     StartApi,
     ReqMktData,
-
+    CancelMktData,
     ReqMarketDataType,
     ReqSecDefOptParams,
 }
@@ -136,6 +136,8 @@ impl IBKRMessageID {
         match self {
             Self::StartApi => 71,
             Self::ReqMktData => 1,
+
+            Self::CancelMktData => 2,
             Self::ReqMarketDataType => 59,
 
             Self::ReqSecDefOptParams => 78,

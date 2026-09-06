@@ -1,13 +1,16 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use chrono::{DateTime, NaiveDate, Utc};
 use eyre::{OptionExt, bail};
+use parking_lot::RwLock;
 use serde::Serialize;
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{
-    OptionQuote,
-    actions::{request_delayed_market_data_type, request_option_quote},
+    IBData, OptionQuote,
+    actions::{
+        PENDING_QUOTES, cancel_market_data, request_delayed_market_data_type, request_option_quote,
+    },
     message::OptionSide,
 };
 
@@ -15,7 +18,6 @@ use crate::{
 pub struct BoxSpread {
     pub intended_loan: u32,
     pub legs: [BoxSpreadLeg; 4],
-    pub created: DateTime<Utc>,
     pub filled: Option<DateTime<Utc>>,
     pub date: NaiveDate,
     pub liquidity: u32,
@@ -97,6 +99,34 @@ impl BoxSpread {
         ];
         [low_strike, high_strike]
     }
+
+    pub fn calculate_spread_liquidity(&mut self) -> u32 {
+        self.liquidity = self
+            .legs
+            .iter_mut()
+            .map(|l| l.calculate_liquidity_score())
+            .min()
+            .unwrap_or(0);
+        self.liquidity
+    }
+
+    pub fn complete(&self) -> bool {
+        self.legs.iter().all(|l| l.complete()) && self.delta.is_some()
+    }
+
+    pub fn calculate_delta(&mut self) {
+        let mut call_deltas = self
+            .legs
+            .iter()
+            .filter(|leg| matches!(leg.option_side, OptionSide::Call))
+            .filter_map(|leg| leg.quote.as_ref().and_then(|q| q.delta));
+
+        if let (Some(a), Some(b)) = (call_deltas.next(), call_deltas.next()) {
+            self.delta = Some((a - b).abs());
+        } else {
+            self.delta = None
+        }
+    }
 }
 
 fn nearest_strike(strikes: &[u32], target: u32) -> Option<u32> {
@@ -125,6 +155,10 @@ pub struct BoxSpreadLeg {
 }
 
 impl BoxSpreadLeg {
+    pub fn complete(&self) -> bool {
+        self.quote.as_ref().map(|q| q.complete()).unwrap_or(false)
+    }
+
     fn calculate_liquidity_score(&mut self) -> u32 {
         let Some(quote) = &self.quote else {
             return 0;
@@ -162,11 +196,13 @@ impl BoxSpreadLeg {
     }
 }
 
-pub fn evaluate_candidate(
+pub async fn evaluate_candidate(
     tx: &UnboundedSender<Vec<u8>>,
     spread: &mut BoxSpread,
     expiration: NaiveDate,
-    trading_class: &str,
+    exchange: String,
+    trading_class: String,
+    ibkr_data: Arc<RwLock<IBData>>,
 ) -> eyre::Result<u32> {
     let strikes = spread.strikes();
 
@@ -176,7 +212,7 @@ pub fn evaluate_candidate(
 
     let mut req_ids = vec![];
 
-    request_delayed_market_data_type(&tx)?;
+    request_delayed_market_data_type(tx)?;
 
     for (strike, right) in [
         (low_strike, OptionSide::Call),
@@ -189,14 +225,70 @@ pub fn evaluate_candidate(
             strike / 100,
             right,
             &expiration.to_string().replace("-", ""),
-            trading_class,
-        );
+            &trading_class,
+        )?;
         req_ids.push(id);
     }
 
     loop {
         let start = std::time::Instant::now();
+
+        loop {
+            if start.elapsed() > Duration::from_secs(10) {
+                for req_id in &req_ids {
+                    cancel_market_data(tx, *req_id)?;
+                    PENDING_QUOTES.lock().unwrap().remove(req_id);
+                }
+                bail!("timed out waiting for quotes");
+            }
+            {
+                let data = ibkr_data.read();
+                let chain = data
+                    .spx_options_chains
+                    .get(&(exchange.clone(), trading_class.clone()));
+                let all_ready = chain
+                    .map(|c| {
+                        spread.legs.iter().all(|leg| {
+                            c.quotes
+                                .get(&(leg.strike / 100, leg.option_side.clone()))
+                                .map(|q| q.complete())
+                                .unwrap_or(false)
+                        })
+                    })
+                    .unwrap_or(false);
+                if all_ready {
+                    break;
+                }
+            }
+
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+
+        let data = ibkr_data.read();
+        if let Some(c) = data
+            .spx_options_chains
+            .get(&(exchange.clone(), trading_class.clone()))
+        {
+            for leg in spread.legs.iter_mut() {
+                leg.quote = c
+                    .quotes
+                    .get(&(leg.strike / 100, leg.option_side.clone()))
+                    .cloned();
+            }
+        }
+        drop(data);
+
+        spread.calculate_spread_liquidity();
+        spread.calculate_delta();
+        if spread.complete() {
+            break;
+        }
     }
 
-    todo!()
+    for req_id in &req_ids {
+        cancel_market_data(tx, *req_id)?;
+        PENDING_QUOTES.lock().unwrap().remove(req_id);
+    }
+
+    Ok(spread.liquidity)
 }

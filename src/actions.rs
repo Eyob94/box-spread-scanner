@@ -65,7 +65,6 @@ pub fn request_spx_options_chain(tx: &UnboundedSender<Vec<u8>>) -> eyre::Result<
     tx.send(msg.into_bytes())?;
     Ok(())
 }
-
 pub static PENDING_QUOTES: LazyLock<Mutex<HashMap<u32, (u32, OptionSide)>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
@@ -113,4 +112,15 @@ pub fn request_option_quote(
     tx.send(msg.into_bytes())?;
 
     Ok(this_id)
+}
+
+pub fn cancel_market_data(tx: &UnboundedSender<Vec<u8>>, req_id: u32) -> eyre::Result<()> {
+    let msg = IBMessage::default()
+        .with_id(IBKRMessageID::CancelMktData)
+        .with_version(2)
+        .field(req_id.to_string());
+
+    tx.send(msg.into_bytes())?;
+
+    Ok(())
 }

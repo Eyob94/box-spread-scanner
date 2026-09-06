@@ -13,11 +13,11 @@ use tracing::{debug, info, instrument};
 use crate::message::{IBMessage, OptionSide, parse_message};
 
 mod actions;
+mod boxspread;
 mod config;
 mod data;
 mod message;
 mod server;
-mod boxspread;
 
 pub use config::*;
 pub use server::*;
@@ -38,6 +38,16 @@ pub struct OptionQuote {
     pub bid_size: u64,
     pub ask_size: u64,
     pub delta: Option<f64>,
+}
+
+impl OptionQuote {
+    pub fn complete(&self) -> bool {
+        self.bid.is_some()
+            && self.ask.is_some()
+            && self.bid_size > 0
+            && self.ask_size > 0
+            && self.delta.is_some()
+    }
 }
 
 #[derive(Default, Serialize)]
