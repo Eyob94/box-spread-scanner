@@ -5,7 +5,7 @@ pub struct Config {
     #[arg(short, long, default_value = "4001")]
     pub ib_port: u16,
 
-    #[arg(short, long, default_value = "0")]
+    #[arg(short, long, default_value = "5")]
     pub client_id: u16,
 
     #[arg(short, long, default_value = "4045")]

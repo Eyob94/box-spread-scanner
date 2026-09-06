@@ -1,7 +1,11 @@
 use strum_macros::Display;
 
 #[derive(Debug, Clone, Default)]
-pub struct IBMessage {}
+pub struct IBMessage {
+    id: IBKRMessageID,
+    version: Option<u32>,
+    fields: Vec<String>,
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct Contract {
@@ -28,7 +32,7 @@ pub enum OptionSide {
     Put,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Display, Default)]
 pub enum Currency {
     #[default]
     USD,
@@ -65,18 +69,72 @@ impl IBMessage {
         msg.extend_from_slice(version_range);
         msg
     }
+
+    pub fn with_id(mut self, id: IBKRMessageID) -> Self {
+        self.id = id;
+        self
+    }
+
+    pub fn with_version(mut self, version: u32) -> Self {
+        self.version = Some(version);
+        self
+    }
+    pub fn field(mut self, field: impl Into<String>) -> Self {
+        self.fields.push(field.into());
+        self
+    }
+
+    pub fn contract(mut self, contract: Contract) -> Self {
+        let fields = &mut self.fields;
+        fields.push(contract.con_id.unwrap_or_default());
+        fields.push(contract.symbol);
+        fields.push(contract.sec_type);
+        fields.push(contract.last_trade_date_or_contract_month);
+        fields.push(contract.strike.map(|s| s.to_string()).unwrap_or_default());
+        fields.push(contract.right.map(|s| s.to_string()).unwrap_or_default());
+        fields.push(
+            contract
+                .multiplier
+                .map(|s| s.to_string())
+                .unwrap_or_default(),
+        );
+        fields.push(contract.exchange);
+        fields.push(contract.primary_exchange.unwrap_or_default());
+        fields.push(contract.currency.to_string());
+        fields.push(contract.local_symbol.unwrap_or_default());
+        fields.push(contract.trading_class.unwrap_or_default());
+
+        self
+    }
+
+    pub fn into_bytes(self) -> Vec<u8> {
+        let mut payload = vec![];
+        push_field(&mut payload, self.id.into_wire_id());
+        if let Some(version) = self.version {
+            push_field(&mut payload, version);
+        }
+        for other in self.fields {
+            push_field(&mut payload, other);
+        }
+        payload
+    }
 }
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash)]
 pub enum IBKRMessageID {
     #[default]
     StartApi,
+    ReqMktData,
+
+    ReqMarketDataType,
 }
 
 impl IBKRMessageID {
     pub fn into_wire_id(self) -> u32 {
         match self {
             Self::StartApi => 71,
+            Self::ReqMktData => 1,
+            Self::ReqMarketDataType => 59
         }
     }
 }

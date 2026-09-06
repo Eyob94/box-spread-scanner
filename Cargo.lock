@@ -420,6 +420,7 @@ dependencies = [
  "chrono",
  "clap",
  "eyre",
+ "parking_lot",
  "strum",
  "strum_macros",
  "tokio",

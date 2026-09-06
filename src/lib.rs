@@ -2,14 +2,22 @@ use std::collections::HashMap;
 
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::{TcpStream, tcp::OwnedWriteHalf},
+    net::{
+        TcpStream,
+        tcp::{OwnedReadHalf, OwnedWriteHalf},
+    },
     sync::mpsc::{UnboundedReceiver, UnboundedSender},
 };
-use tracing::{debug, info};
+use tracing::{debug, info, instrument};
 
-use crate::message::{IBMessage, parse_message};
+use crate::{
+    data::parse_ib_bytes,
+    message::{IBMessage, parse_message},
+};
 
+mod actions;
 mod config;
+mod data;
 mod message;
 mod server;
 
@@ -46,14 +54,14 @@ pub struct IBData {
     pub handshake: Option<bool>,
     pub start_api: Option<bool>,
     pub spx_options_chains: HashMap<(String, String), OptionChainParams>,
+    pub spx_spot_price: Option<u32>,
 }
 
+#[instrument]
 pub async fn start_connection(
     port: u16,
     client_id: u16,
-    tx: UnboundedSender<Vec<u8>>,
-    mut rx: UnboundedReceiver<Vec<u8>>,
-) -> eyre::Result<IBData> {
+) -> eyre::Result<(OwnedReadHalf, OwnedWriteHalf, IBData)> {
     let mut data = IBData::default();
 
     let (mut reader, mut writer) = TcpStream::connect(format!("127.0.0.1:{port}"))
@@ -79,30 +87,16 @@ pub async fn start_connection(
     loop {
         let payload = read_message_from_ibkr(&mut reader).await?;
         let fields = parse_message(&payload)?;
+        info!(?fields, "API searching");
 
-        if fields.first() == Some(&client_id.to_string().as_str()) {
+        if fields.first() == Some(&"9") {
             info!("API is accepted :D");
             data.start_api = Some(true);
             break;
         }
     }
 
-    tokio::spawn(async move {
-        loop {
-            let msg = rx.recv().await.unwrap();
-
-            send_message_to_ibkr(&mut writer, msg).await.unwrap();
-        }
-    });
-
-    tokio::spawn(async move {
-        loop {
-            let payload = read_message_from_ibkr(&mut reader).await.unwrap();
-            tx.send(payload).unwrap();
-        }
-    });
-
-    Ok(data)
+    Ok((reader, writer, data))
 }
 
 pub async fn read_message_from_ibkr(
