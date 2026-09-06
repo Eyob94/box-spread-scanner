@@ -1,5 +1,38 @@
+use strum_macros::Display;
+
 #[derive(Debug, Clone, Default)]
 pub struct IBMessage {}
+
+#[derive(Debug, Clone, Default)]
+pub struct Contract {
+    pub con_id: Option<String>,
+    pub symbol: String,
+    pub sec_type: String,
+    pub exchange: String,
+    pub primary_exchange: Option<String>,
+    pub currency: Currency,
+    pub last_trade_date_or_contract_month: String,
+    pub strike: Option<u32>,
+    pub right: Option<OptionSide>,
+    pub multiplier: Option<u32>,
+    pub local_symbol: Option<String>,
+    pub trading_class: Option<String>,
+}
+
+#[derive(Debug, Clone, Display, Eq, Hash, PartialEq, Default)]
+pub enum OptionSide {
+    #[default]
+    #[strum(serialize = "C")]
+    Call,
+    #[strum(serialize = "P")]
+    Put,
+}
+
+#[derive(Debug, Clone, Default)]
+pub enum Currency {
+    #[default]
+    USD,
+}
 
 fn push_field(buf: &mut Vec<u8>, value: impl ToString) {
     buf.extend_from_slice(value.to_string().as_bytes());
