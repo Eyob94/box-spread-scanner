@@ -225,6 +225,7 @@ pub async fn evaluate_candidate(
             strike / 100,
             right,
             &expiration.to_string().replace("-", ""),
+            &exchange,
             &trading_class,
         )?;
         req_ids.push(id);

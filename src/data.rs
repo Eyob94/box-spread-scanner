@@ -1,9 +1,10 @@
-use std::{collections::HashMap};
+use std::collections::HashMap;
 
 use chrono::NaiveDate;
 use eyre::OptionExt;
+use tracing::info;
 
-use crate::{IBData, OptionChainParams, message::parse_message};
+use crate::{IBData, OptionChainParams, actions::PENDING_QUOTES, message::parse_message};
 
 pub fn parse_ib_bytes(payload: Vec<u8>, data: &mut IBData) -> eyre::Result<()> {
     let res = parse_message(&payload)?;
@@ -15,8 +16,39 @@ pub fn parse_ib_bytes(payload: Vec<u8>, data: &mut IBData) -> eyre::Result<()> {
     match res[0] {
         "1" => {
             let (_, info) = res.split_at(2);
+
+            let req_id: u32 = info[0].parse()?;
             let tick_type: i32 = info[1].parse()?;
             let price: f64 = info[2].parse()?;
+
+            info!(?info, "TICK data");
+
+            if let Some((strike, right, exchange, trading_class)) =
+                PENDING_QUOTES.lock().unwrap().get(&req_id).cloned()
+            {
+                info!(
+                    ?req_id,
+                    strike, ?right, exchange, trading_class, "Pending quote"
+                );
+                if let Some(chain) = data.spx_options_chains.get_mut(&(exchange, trading_class)) {
+                    let quote = chain.quotes.entry((strike, right)).or_default();
+                    let size: u64 = info[3].parse().unwrap_or(0);
+                    if price > 0.0 {
+                        match tick_type {
+                            1 | 66 => {
+                                quote.bid = Some((price * 100.0).round() as u32);
+                                quote.bid_size = size;
+                            }
+                            2 | 67 => {
+                                quote.ask = Some((price * 100.0).round() as u32);
+                                quote.ask_size = size;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                return Ok(());
+            }
 
             if matches!(tick_type, 75) && price > 0.0 {
                 data.spx_spot_price = Some((price * 100.0).round() as u32);

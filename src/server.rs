@@ -63,10 +63,10 @@ pub async fn start_server(config: Config) -> eyre::Result<()> {
         request_delayed_market_data_type(&request_tx).unwrap();
         request_spx_options_chain(&request_tx).unwrap();
         // check spx price every 5 seconds in case it updates
-        loop {
+        // loop {
             request_spx_spot_price(&request_tx).unwrap();
-            tokio::time::sleep(Duration::from_secs(5)).await;
-        }
+            // tokio::time::sleep(Duration::from_secs(5)).await;
+        // }
     });
 
     let router = Router::new()

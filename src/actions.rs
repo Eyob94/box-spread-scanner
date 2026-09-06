@@ -65,7 +65,7 @@ pub fn request_spx_options_chain(tx: &UnboundedSender<Vec<u8>>) -> eyre::Result<
     tx.send(msg.into_bytes())?;
     Ok(())
 }
-pub static PENDING_QUOTES: LazyLock<Mutex<HashMap<u32, (u32, OptionSide)>>> =
+pub static PENDING_QUOTES: LazyLock<Mutex<HashMap<u32, (u32, OptionSide, String, String)>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 pub fn request_option_quote(
@@ -73,12 +73,13 @@ pub fn request_option_quote(
     strike: u32,
     right: OptionSide,
     expiry: &str,
+    exchange: &str,
     trading_class: &str,
 ) -> eyre::Result<u32> {
     let contract = Contract {
         symbol: "SPX".into(),
         sec_type: "OPT".into(),
-        exchange: "CBOE".into(),
+        exchange: exchange.into(),
         trading_class: Some(trading_class.into()),
         last_trade_date_or_contract_month: expiry.into(),
         strike: Some(strike),
@@ -96,7 +97,7 @@ pub fn request_option_quote(
     PENDING_QUOTES
         .lock()
         .unwrap()
-        .insert(this_id, (strike, right));
+        .insert(this_id, (strike, right, exchange.into(), trading_class.into()));
 
     let msg = IBMessage::default()
         .with_id(IBKRMessageID::ReqMktData)
