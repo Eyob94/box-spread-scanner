@@ -1,7 +1,6 @@
 # Box Spread Scanner
 
-
-If you don't know what a box spread is, please check out: boxspreads.io or any other source that teaches about them.
+If you don't know what a box spread is, please check out: [boxspreads.io](https://boxspreads.io) or any other source that teaches about them.
 
 This is a box spread scanner that checks multiple pairs from multiple exchanges - CBOE, IBSUPT, SMART on both SPX and SPXW, to find the best liquidity pair for a box spread
 
