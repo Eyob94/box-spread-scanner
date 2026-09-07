@@ -94,10 +94,10 @@ pub fn request_option_quote(
     drop(req_id);
     info!(?strike, ?right, "Sending quote for {strike}:{right}");
 
-    PENDING_QUOTES
-        .lock()
-        .unwrap()
-        .insert(this_id, (strike, right, exchange.into(), trading_class.into()));
+    PENDING_QUOTES.lock().unwrap().insert(
+        this_id,
+        (strike, right, exchange.into(), trading_class.into()),
+    );
 
     let msg = IBMessage::default()
         .with_id(IBKRMessageID::ReqMktData)

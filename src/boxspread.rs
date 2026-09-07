@@ -191,7 +191,7 @@ impl BoxSpread {
     }
 
     pub fn complete(&self) -> bool {
-        self.legs.iter().all(|l| l.complete())  && self.delta.is_some() 
+        self.legs.iter().all(|l| l.complete()) && self.delta.is_some()
     }
 
     pub fn calculate_delta(&mut self) {
