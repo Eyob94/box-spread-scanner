@@ -5,7 +5,6 @@ use eyre::{OptionExt, bail};
 use parking_lot::RwLock;
 use serde::Serialize;
 use tokio::sync::mpsc::UnboundedSender;
-use tracing::info;
 
 use crate::{
     IBData, OptionQuote,
@@ -34,6 +33,86 @@ pub struct BoxSpread {
 }
 
 impl BoxSpread {
+    pub fn set_strikes(&mut self,  low_strike: u32, high_strike: u32) {
+        self.legs.iter_mut().for_each(|l| {
+            if l.itm {
+                if l.option_side == OptionSide::Call {
+                    l.strike = low_strike;
+                } else {
+                    l.strike = high_strike;
+                }
+            } else {
+                if l.option_side == OptionSide::Call {
+                    l.strike = high_strike;
+                } else {
+                    l.strike = low_strike;
+                }
+            }
+        });
+    }
+
+    pub fn calculate_box_pricing(&mut self) -> Option<()> {
+        let strikes = self.strikes();
+        let (low, high) = (*strikes.iter().min()?, *strikes.iter().max()?);
+
+        let low_call = self
+            .legs
+            .iter()
+            .find(|l| l.strike == low && l.option_side == OptionSide::Call)?
+            .quote
+            .as_ref()?;
+
+        let high_call = self
+            .legs
+            .iter()
+            .find(|l| l.strike == high && l.option_side == OptionSide::Call)?
+            .quote
+            .as_ref()?;
+        let high_put = self
+            .legs
+            .iter()
+            .find(|l| l.strike == high && l.option_side == OptionSide::Put)?
+            .quote
+            .as_ref()?;
+        let low_put = self
+            .legs
+            .iter()
+            .find(|l| l.strike == low && l.option_side == OptionSide::Put)?
+            .quote
+            .as_ref()?;
+
+        let (lc_bid, lc_ask) = (low_call.bid?, low_call.ask?);
+        let (hc_bid, hc_ask) = (high_call.bid?, high_call.ask?);
+        let (hp_bid, hp_ask) = (high_put.bid?, high_put.ask?);
+        let (lp_bid, lp_ask) = (low_put.bid?, low_put.ask?);
+
+        let lc_mid = (lc_bid + lc_ask) / 2;
+        let hc_mid = (hc_bid + hc_ask) / 2;
+        let hp_mid = (hp_bid + hp_ask) / 2;
+        let lp_mid = (lp_bid + lp_ask) / 2;
+
+        let best_price = lc_ask
+            .saturating_sub(hc_bid)
+            .saturating_add(hp_ask.saturating_sub(lp_bid));
+        let worst_price = lc_bid
+            .saturating_sub(hc_ask)
+            .saturating_add(hp_bid.saturating_sub(lp_ask));
+        let mid_price = lc_mid
+            .saturating_sub(hc_mid)
+            .saturating_add(hp_mid.saturating_sub(lp_mid));
+
+        self.worst_price = worst_price;
+        self.best_price = best_price;
+        self.mid_price = mid_price;
+
+        let width = high - low;
+        self.worst_rate_bps = implied_rate_bps(width, worst_price, self.date);
+        self.best_rate_bps = implied_rate_bps(width, best_price, self.date);
+        self.mid_rate_bps = implied_rate_bps(width, mid_price, self.date);
+
+        Some(())
+    }
+
     pub fn with_loan(self, loan: u32) -> Self {
         Self {
             intended_loan: loan,
@@ -128,6 +207,18 @@ impl BoxSpread {
             self.delta = None
         }
     }
+}
+
+fn implied_rate_bps(width: u32, price: u32, expiry: NaiveDate) -> i64 {
+    if price == 0 {
+        return 0;
+    }
+    let days = (expiry - Utc::now().date_naive()).num_days();
+    if days <= 0 {
+        return 0;
+    }
+    let rate = (width as f64 - price as f64) / price as f64 * (365.0 / days as f64) * 10_000.0;
+    rate.round() as i64
 }
 
 fn nearest_strike(strikes: &[u32], target: u32) -> Option<u32> {

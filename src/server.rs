@@ -10,6 +10,7 @@ use axum::{
 use chrono::Utc;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use tokio::{
     net::TcpListener,
     sync::mpsc::{UnboundedSender, unbounded_channel},
@@ -19,12 +20,10 @@ use tracing::{error, info, instrument};
 use crate::{
     Config, IBData,
     actions::{
-        request_delayed_market_data_type, request_option_quote, request_spx_options_chain,
-        request_spx_spot_price,
+        request_delayed_market_data_type, request_spx_options_chain, request_spx_spot_price,
     },
     boxspread::{BoxSpread, evaluate_candidate},
     data::parse_ib_bytes,
-    message::OptionSide,
     read_message_from_ibkr, send_message_to_ibkr, start_connection,
 };
 
@@ -65,10 +64,10 @@ pub async fn start_server(config: Config) -> eyre::Result<()> {
         request_delayed_market_data_type(&request_tx).unwrap();
         request_spx_options_chain(&request_tx).unwrap();
         // check spx price every 5 seconds in case it updates
-        // loop {
-        request_spx_spot_price(&request_tx).unwrap();
-        //     tokio::time::sleep(Duration::from_secs(30)).await;
-        // }
+        loop {
+            request_spx_spot_price(&request_tx).unwrap();
+            tokio::time::sleep(Duration::from_secs(30)).await;
+        }
     });
 
     let router = Router::new()
@@ -130,6 +129,9 @@ pub struct BoxBody {
     pub trading_class: String,
 }
 
+#[allow(clippy::inconsistent_digit_grouping)]
+const STEP_SIZES: [u32; 6] = [1000_00, 500_00, 250_00, 100_00, 50_00, 10_00]; // cents (100/50/20/10 points)
+
 pub async fn get_boxes(
     State(app_state): State<Arc<AppState>>,
     Json(body): Json<BoxBody>,
@@ -164,8 +166,8 @@ pub async fn get_boxes(
         &app_state.tx,
         &mut spread,
         body.date,
-        body.exchange,
-        body.trading_class,
+        body.exchange.clone(),
+        body.trading_class.clone(),
         app_state.data.clone(),
     )
     .await
@@ -174,5 +176,95 @@ pub async fn get_boxes(
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     }
 
-    Json(spread).into_response()
+    let mut best_spread = spread.clone();
+
+    info!(liquidity = best_spread.liquidity, "Starting liquidity");
+
+    let mut spreads = vec![];
+
+    for step in STEP_SIZES {
+        loop {
+            let mut changed = false;
+            let strikes = best_spread.strikes();
+
+            let Some(low_strike) = strikes.iter().min() else {
+                break;
+            };
+            let Some(high_strike) = strikes.iter().max() else {
+                break;
+            };
+            info!(low_strike, high_strike, "Checking new strikes");
+            spread.set_strikes(low_strike - step, high_strike - step);
+            let down_liq = match evaluate_candidate(
+                &app_state.tx,
+                &mut spread,
+                body.date,
+                body.exchange.clone(),
+                body.trading_class.clone(),
+                app_state.data.clone(),
+            )
+            .await
+            {
+                Ok(d) => d,
+                Err(e) => {
+                    error!(?e, "Error evaluating");
+                    break;
+                }
+            };
+
+            spreads.push(spread.clone());
+
+            info!(down_liq, "Down Liquidty");
+
+            if down_liq > best_spread.liquidity {
+                changed = true;
+                best_spread = spread.clone();
+            }
+            spread.set_strikes(low_strike + step, high_strike + step);
+            let up_liq = match evaluate_candidate(
+                &app_state.tx,
+                &mut spread,
+                body.date,
+                body.exchange.clone(),
+                body.trading_class.clone(),
+                app_state.data.clone(),
+            )
+            .await
+            {
+                Ok(u) => u,
+                Err(e) => {
+                    error!(?e, "Error evaluating");
+                    break;
+                }
+            };
+            spreads.push(spread.clone());
+
+            info!(up_liq, "Up Liquidty");
+            if up_liq > best_spread.liquidity {
+                changed = true;
+                best_spread = spread.clone();
+            }
+
+            info!(
+                liquidity = best_spread.liquidity,
+                step, changed, "Current best liquidity"
+            );
+            if !changed {
+                break;
+            }
+
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+    }
+
+    best_spread.calculate_box_pricing();
+    for spread in spreads.iter_mut() {
+        spread.calculate_box_pricing();
+    }
+
+    Json(json!({
+        "best_spread": best_spread,
+        "spreads": spreads
+    }))
+    .into_response()
 }
