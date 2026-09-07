@@ -46,7 +46,7 @@ impl OptionQuote {
             && self.ask.is_some()
             && self.bid_size > 0
             && self.ask_size > 0
-            && self.delta.is_some()
+            // && self.delta.is_some()
     }
 }
 

@@ -19,10 +19,12 @@ use tracing::{error, info, instrument};
 use crate::{
     Config, IBData,
     actions::{
-        request_delayed_market_data_type, request_spx_options_chain, request_spx_spot_price,
+        request_delayed_market_data_type, request_option_quote, request_spx_options_chain,
+        request_spx_spot_price,
     },
     boxspread::{BoxSpread, evaluate_candidate},
     data::parse_ib_bytes,
+    message::OptionSide,
     read_message_from_ibkr, send_message_to_ibkr, start_connection,
 };
 
@@ -64,8 +66,8 @@ pub async fn start_server(config: Config) -> eyre::Result<()> {
         request_spx_options_chain(&request_tx).unwrap();
         // check spx price every 5 seconds in case it updates
         // loop {
-            request_spx_spot_price(&request_tx).unwrap();
-            // tokio::time::sleep(Duration::from_secs(5)).await;
+        request_spx_spot_price(&request_tx).unwrap();
+        //     tokio::time::sleep(Duration::from_secs(30)).await;
         // }
     });
 
@@ -157,8 +159,6 @@ pub async fn get_boxes(
     if low_strike == 0 || high_strike == 0 {
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     }
-
-    info!(?spread, "Spread we got so far");
 
     if let Err(e) = evaluate_candidate(
         &app_state.tx,

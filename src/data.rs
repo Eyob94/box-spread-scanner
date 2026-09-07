@@ -21,15 +21,9 @@ pub fn parse_ib_bytes(payload: Vec<u8>, data: &mut IBData) -> eyre::Result<()> {
             let tick_type: i32 = info[1].parse()?;
             let price: f64 = info[2].parse()?;
 
-            info!(?info, "TICK data");
-
             if let Some((strike, right, exchange, trading_class)) =
                 PENDING_QUOTES.lock().unwrap().get(&req_id).cloned()
             {
-                info!(
-                    ?req_id,
-                    strike, ?right, exchange, trading_class, "Pending quote"
-                );
                 if let Some(chain) = data.spx_options_chains.get_mut(&(exchange, trading_class)) {
                     let quote = chain.quotes.entry((strike, right)).or_default();
                     let size: u64 = info[3].parse().unwrap_or(0);
@@ -46,9 +40,11 @@ pub fn parse_ib_bytes(payload: Vec<u8>, data: &mut IBData) -> eyre::Result<()> {
                             _ => {}
                         }
                     }
+                    info!(?chain.quotes, "Quotes");
                 }
                 return Ok(());
             }
+
 
             if matches!(tick_type, 75) && price > 0.0 {
                 data.spx_spot_price = Some((price * 100.0).round() as u32);

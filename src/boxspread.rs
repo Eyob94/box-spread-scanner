@@ -5,6 +5,7 @@ use eyre::{OptionExt, bail};
 use parking_lot::RwLock;
 use serde::Serialize;
 use tokio::sync::mpsc::UnboundedSender;
+use tracing::info;
 
 use crate::{
     IBData, OptionQuote,
@@ -111,7 +112,7 @@ impl BoxSpread {
     }
 
     pub fn complete(&self) -> bool {
-        self.legs.iter().all(|l| l.complete()) && self.delta.is_some()
+        self.legs.iter().all(|l| l.complete()) /* && self.delta.is_some() */
     }
 
     pub fn calculate_delta(&mut self) {
@@ -247,6 +248,7 @@ pub async fn evaluate_candidate(
                 let chain = data
                     .spx_options_chains
                     .get(&(exchange.clone(), trading_class.clone()));
+
                 let all_ready = chain
                     .map(|c| {
                         spread.legs.iter().all(|leg| {
