@@ -33,7 +33,7 @@ pub struct BoxSpread {
 }
 
 impl BoxSpread {
-    pub fn set_strikes(&mut self,  low_strike: u32, high_strike: u32) {
+    pub fn set_strikes(&mut self, low_strike: u32, high_strike: u32) {
         self.legs.iter_mut().for_each(|l| {
             if l.itm {
                 if l.option_side == OptionSide::Call {
@@ -191,7 +191,7 @@ impl BoxSpread {
     }
 
     pub fn complete(&self) -> bool {
-        self.legs.iter().all(|l| l.complete()) /* && self.delta.is_some() */
+        self.legs.iter().all(|l| l.complete())  && self.delta.is_some() 
     }
 
     pub fn calculate_delta(&mut self) {

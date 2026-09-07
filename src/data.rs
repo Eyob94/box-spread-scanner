@@ -45,9 +45,34 @@ pub fn parse_ib_bytes(payload: Vec<u8>, data: &mut IBData) -> eyre::Result<()> {
                 return Ok(());
             }
 
-
             if matches!(tick_type, 75) && price > 0.0 {
                 data.spx_spot_price = Some((price * 100.0).round() as u32);
+            }
+        }
+
+
+        "21" => {
+            let (_, info) = res.split_at(1); 
+            let req_id: u32 = info[0].parse()?;
+            let tick_type: i32 = info[1].parse()?;
+            let delta_str = info[4];
+
+            info!(?info, "DELTA");
+
+            if delta_str.is_empty() || delta_str == "-2" {
+                return Ok(());
+            }
+            let delta: f64 = delta_str.parse()?;
+
+            if let Some((strike, right, exchange, trading_class)) = PENDING_QUOTES.lock().unwrap().get(&req_id).cloned()
+                && let Some(chain) = data
+                    .spx_options_chains
+                    .get_mut(&(exchange, trading_class))
+            {
+                let quote = chain.quotes.entry((strike, right)).or_default();
+                if matches!(tick_type, 83) {
+                    quote.delta = Some(delta);
+                }
             }
         }
 

@@ -1,5 +1,8 @@
 # Box Spread Scanner
 
+
+If you don't know what a box spread is, please check out: boxspreads.io or any other source that teaches about them.
+
 This is a box spread scanner that checks multiple pairs from multiple exchanges - CBOE, IBSUPT, SMART on both SPX and SPXW, to find the best liquidity pair for a box spread
 
 It's currently WIP
@@ -82,46 +85,50 @@ curl -X POST http://localhost:4045/boxes \
         "amount": 10000000
       }'
 ```
+
 Request body
+
 ```json
 {
-    "tradingClass": "SPX",   // SPX or SPXW
-    "exchange": "CBOE",      // CBOE, IBSUPT, or SMART
-    "date": "2026-09-17",    // expiration date, must be a valid date, check `/dates` if you need to see first
-    "amount": 10000000       // amount in cents, so $100k becomes 100_000_00 (no dashes, simply for view)
+  "tradingClass": "SPX", // SPX or SPXW
+  "exchange": "CBOE", // CBOE, IBSUPT, or SMART
+  "date": "2026-09-17", // expiration date, must be a valid date, check `/dates` if you need to see first
+  "amount": 10000000 // amount in cents, so $100k becomes 100_000_00 (no dashes, simply for view)
 }
 ```
+
 _Response_
 
 Starts from the nearest strikes to spot and walks outward in decreasing step sizes (looking for the box with the best liquidity, where liquidity is the min liquidity across its 4 legs). Returns the best spread found plus every candidate spread evaluated along the way.
+
 ```json
 {
-    "best_spread": {
-        "date": "2026-09-17",
-        "intended_loan": 10000000,
-        "liquidity": 1212,           // liquidity score, the minimum one from 4 legs, becomes the limit
-        "best_price": 99975,         // best price from the bid ask spread
-        "mid_price": 99858,          
-        "worst_price": 99740,        
-        "best_rate_bps": 91,
-        "mid_rate_bps": 519,
-        "worst_rate_bps": 951,
-        "legs": [
-            {
-                "option_side": "Call",
-                "strike": 700000,     // 7000.00, cents
-                "itm": true,
-                "bid": 72320,
-                "ask": 72420,
-                "bid_size": 2,
-                "ask_size": 2,
-                "liquidity": 2856
-            },
-            // ...3 more legs (Call OTM, Put ITM, Put OTM)
-        ]
-    },
-    "spreads": [
-        // every candidate spread evaluated during the scan, similar structure to best spread
+  "best_spread": {
+    "date": "2026-09-17",
+    "intended_loan": 10000000,
+    "liquidity": 1212, // liquidity score, the minimum one from 4 legs, becomes the limit
+    "best_price": 99975, // best price from the bid ask spread
+    "mid_price": 99858,
+    "worst_price": 99740,
+    "best_rate_bps": 91,
+    "mid_rate_bps": 519,
+    "worst_rate_bps": 951,
+    "legs": [
+      {
+        "option_side": "Call",
+        "strike": 700000, // 7000.00, cents
+        "itm": true,
+        "bid": 72320,
+        "ask": 72420,
+        "bid_size": 2,
+        "ask_size": 2,
+        "liquidity": 2856
+      }
+      // ...3 more legs (Call OTM, Put ITM, Put OTM)
     ]
+  },
+  "spreads": [
+    // every candidate spread evaluated during the scan, similar structure to best spread
+  ]
 }
 ```
